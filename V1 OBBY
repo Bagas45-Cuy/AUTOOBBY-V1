@@ -17,6 +17,7 @@ local autoRebirthToggle = false
 local teleDelay = 1.0 -- Default delay dalam detik
 local heightOffset = 3 -- Ketinggian teleport di atas checkpoint
 local jumpForce = 45 -- Kekuatan dorongan melompat ke atas
+local maxStageBeforeRebirth = 100 -- Stage target untuk Rebirth
 
 local pauseEndTime = 0
 local isProcessingTeleport = false
@@ -93,36 +94,57 @@ local function getCPPosition(cpObject)
 end
 
 -----------------------------------------
--- FUNGSI AUTO REBIRTH
+-- FUNGSI AUTO REBIRTH LEBIH AGRESIF
 -----------------------------------------
 local function attemptRebirth()
-    -- 1. Deteksi Remote Event / Function Rebirth umum
-    local remoteNames = {"Rebirth", "RebirthEvent", "DoRebirth", "RebirthRequest", "PerformRebirth", "BuyRebirth", "RebirthBtn"}
-    for _, item in ipairs(ReplicatedStorage:GetDescendants()) do
-        for _, rName in ipairs(remoteNames) do
-            if item.Name:lower() == rName:lower() then
-                if item:IsA("RemoteEvent") then
-                    pcall(function() item:FireServer() end)
-                elseif item:IsA("RemoteFunction") then
-                    pcall(function() item:InvokeServer() end)
+    -- A. Eksekusi Remote Event / Remote Function
+    for _, item in ipairs(game:GetDescendants()) do
+        if item:IsA("RemoteEvent") or item:IsA("RemoteFunction") then
+            local name = item.Name:lower()
+            if name:find("rebirth") or name:find("prestige") or name:find("reset") then
+                pcall(function()
+                    if item:IsA("RemoteEvent") then
+                        item:FireServer()
+                    elseif item:IsA("RemoteFunction") then
+                        item:InvokeServer()
+                    end
+                end)
+            end
+        end
+    end
+
+    -- B. Eksekusi Simulasi Klik pada Tombol UI Rebirth di PlayerGui
+    local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+    if playerGui then
+        for _, guiItem in ipairs(playerGui:GetDescendants()) do
+            if guiItem:IsA("TextButton") or guiItem:IsA("ImageButton") then
+                local btnName = guiItem.Name:lower()
+                local btnText = (guiItem:IsA("TextButton") and guiItem.Text:lower()) or ""
+                if btnName:find("rebirth") or btnText:find("rebirth") or btnText:find("yes") or btnText:find("confirm") then
+                    pcall(function()
+                        for _, connection in ipairs(getconnections(guiItem.MouseButton1Click)) do
+                            connection:Fire()
+                        end
+                        for _, connection in ipairs(getconnections(guiItem.Activated)) do
+                            connection:Fire()
+                        end
+                    end)
                 end
             end
         end
     end
 
-    -- 2. Deteksi Part Touch Rebirth di Workspace
+    -- C. Sentuh Part Rebirth di Workspace jika berbentuk Physical Part
     for _, item in ipairs(workspace:GetDescendants()) do
-        if item.Name:lower():find("rebirth") and not item:IsA("LocalScript") and not item:IsA("Script") then
-            if item:IsA("BasePart") then
-                local char = LocalPlayer.Character
-                local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                if hrp and firetouchinterest then
-                    pcall(function()
-                        firetouchinterest(hrp, item, 0)
-                        task.wait(0.1)
-                        firetouchinterest(hrp, item, 1)
-                    end)
-                end
+        if item:IsA("BasePart") and item.Name:lower():find("rebirth") then
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if hrp and firetouchinterest then
+                pcall(function()
+                    firetouchinterest(hrp, item, 0)
+                    task.wait(0.1)
+                    firetouchinterest(hrp, item, 1)
+                end)
             end
         end
     end
@@ -334,8 +356,13 @@ end)
 -----------------------------------------
 task.spawn(function()
     while true do
-        if autoRebirthToggle then
+        local currentStage = getCurrentStageNumber()
+
+        -- Jika Auto Rebirth aktif dan player sudah mencapai Stage 100 ke atas
+        if autoRebirthToggle and currentStage and currentStage >= maxStageBeforeRebirth then
             attemptRebirth()
+            manualStageTracker = 1
+            task.wait(1)
         end
 
         if autoToggle then
@@ -349,7 +376,6 @@ task.spawn(function()
             local hum = char and char:FindFirstChildOfClass("Humanoid")
 
             if hrp and hum and hum.Health > 0 then
-                local currentStage = getCurrentStageNumber()
                 local nextStageNum = 1
 
                 if currentStage then
