@@ -1,0 +1,313 @@
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local CoreGui = game:GetService("CoreGui")
+local VirtualUser = game:GetService("VirtualUser")
+
+-- Hapus GUI lama jika ada
+if CoreGui:FindFirstChild("UniversalObbyHub") then
+    CoreGui.UniversalObbyHub:Destroy()
+end
+
+-----------------------------------------
+-- CONFIGURATION & VARIABLES
+-----------------------------------------
+local autoToggle = false
+local teleDelay = 1.0 -- Default delay dalam detik
+
+local pauseEndTime = 0
+local isProcessingTeleport = false
+local manualStageTracker = 1
+
+-- Fungsi untuk mendapatkan nomor stage player saat ini dari leaderstats
+local function getCurrentStageNumber()
+    local leaderstats = LocalPlayer:FindFirstChild("leaderstats")
+    if leaderstats then
+        local stage = leaderstats:FindFirstChild("Stage") or leaderstats:FindFirstChild("Stage ") or leaderstats:FindFirstChild("Checkpoint")
+        if stage and tonumber(stage.Value) then
+            return tonumber(stage.Value)
+        end
+    end
+    return nil
+end
+
+-- Fungsi mencari objek stage yang tepat berdasarkan angka
+local function findTargetStageObject(targetStageNum)
+    local possibleNames = {
+        tostring(targetStageNum),
+        "Stage" .. tostring(targetStageNum),
+        "Stage " .. tostring(targetStageNum),
+        "CP" .. tostring(targetStageNum),
+        "CP " .. tostring(targetStageNum),
+        "Checkpoint" .. tostring(targetStageNum)
+    }
+
+    -- Cari di folder umum lebih dulu
+    local possibleFolders = {"CheckPoints", "Checkpoints", "Stages", "SpawnPoints", "Spawns", "CPs"}
+    for _, fName in ipairs(possibleFolders) do
+        local folder = workspace:FindFirstChild(fName)
+        if folder then
+            for _, name in ipairs(possibleNames) do
+                local found = folder:FindFirstChild(name)
+                if found then return found end
+            end
+        end
+    end
+
+    -- Jika tidak ada folder, cari langsung di Workspace
+    for _, name in ipairs(possibleNames) do
+        local found = workspace:FindFirstChild(name)
+        if found then return found end
+    end
+
+    -- Jika masih tidak ketemu, telusuri seluruh objek di workspace
+    for _, item in ipairs(workspace:GetDescendants()) do
+        if item:IsA("BasePart") or item:IsA("Model") then
+            local numInName = tonumber(item.Name:match("^%d+$") or item.Name:match("stage%s*(%d+)") or item.Name:match("cp%s*(%d+)"))
+            if numInName == targetStageNum then
+                return item
+            end
+        end
+    end
+
+    return nil
+end
+
+-- Fungsi mengambil CFrame dari objek stage
+local function getCPPosition(cpObject)
+    if not cpObject then return nil end
+    if cpObject:IsA("BasePart") then
+        return cpObject.CFrame
+    elseif cpObject:IsA("Model") then
+        if cpObject.PrimaryPart then
+            return cpObject.PrimaryPart.CFrame
+        else
+            local part = cpObject:FindFirstChildWhichIsA("BasePart", true)
+            if part then return part.CFrame end
+        end
+    end
+    return nil
+end
+
+-----------------------------------------
+-- ANTI-AFK SYSTEM
+-----------------------------------------
+LocalPlayer.Idled:Connect(function()
+    VirtualUser:CaptureController()
+    VirtualUser:ClickButton2(Vector2.zero)
+end)
+
+-----------------------------------------
+-- ALUR RESPAWN & PAUSE AMAN (4 DETIK)
+-----------------------------------------
+local function onCharacterAdded(char)
+    local hum = char:WaitForChild("Humanoid", 5)
+    if not hum then return end
+
+    pauseEndTime = tick() + 4
+    task.wait(4)
+    isProcessingTeleport = false
+end
+
+if LocalPlayer.Character then
+    LocalPlayer.CharacterAdded:Connect(onCharacterAdded)
+end
+LocalPlayer.CharacterAdded:Connect(onCharacterAdded)
+
+-----------------------------------------
+-- INTERFACE (GUI KUSTOM TEMA BIRU)
+-----------------------------------------
+local UniversalObbyHub = Instance.new("ScreenGui")
+UniversalObbyHub.Name = "UniversalObbyHub"
+UniversalObbyHub.Parent = CoreGui
+UniversalObbyHub.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Parent = UniversalObbyHub
+MainFrame.BackgroundColor3 = Color3.fromRGB(15, 25, 45)
+MainFrame.BorderColor3 = Color3.fromRGB(0, 120, 255)
+MainFrame.BorderSizePixel = 2
+MainFrame.Position = UDim2.new(0.35, 0, 0.35, 0)
+MainFrame.Size = UDim2.new(0, 280, 0, 230)
+MainFrame.Active = true
+MainFrame.Draggable = true
+
+local TitleBar = Instance.new("Frame")
+TitleBar.Name = "TitleBar"
+TitleBar.Parent = MainFrame
+TitleBar.BackgroundColor3 = Color3.fromRGB(0, 90, 200)
+TitleBar.BorderSizePixel = 0
+TitleBar.Size = UDim2.new(1, 0, 0, 35)
+
+local TitleText = Instance.new("TextLabel")
+TitleText.Parent = TitleBar
+TitleText.BackgroundTransparency = 1
+TitleText.Position = UDim2.new(0, 10, 0, 0)
+TitleText.Size = UDim2.new(0.7, 0, 1, 0)
+TitleText.Font = Enum.Font.SourceSansBold
+TitleText.Text = "Universal Obby | BagasHub"
+TitleText.TextColor3 = Color3.fromRGB(255, 255, 255)
+TitleText.TextSize = 18
+TitleText.TextXAlignment = Enum.TextXAlignment.Left
+
+local ContentFrame = Instance.new("Frame")
+ContentFrame.Name = "ContentFrame"
+ContentFrame.Parent = MainFrame
+ContentFrame.BackgroundTransparency = 1
+ContentFrame.Position = UDim2.new(0, 0, 0, 35)
+ContentFrame.Size = UDim2.new(1, 0, 1, -35)
+
+local ToggleButton = Instance.new("TextButton")
+ToggleButton.Parent = ContentFrame
+ToggleButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+ToggleButton.BorderSizePixel = 0
+ToggleButton.Position = UDim2.new(0.05, 0, 0.1, 0)
+ToggleButton.Size = UDim2.new(0.9, 0, 0, 40)
+ToggleButton.Font = Enum.Font.SourceSansBold
+ToggleButton.Text = "AUTO OBBY: OFF"
+ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleButton.TextSize = 16
+
+local SpeedLabel = Instance.new("TextLabel")
+SpeedLabel.Parent = ContentFrame
+SpeedLabel.BackgroundTransparency = 1
+SpeedLabel.Position = UDim2.new(0.05, 0, 0.38, 0)
+SpeedLabel.Size = UDim2.new(0.5, 0, 0, 30)
+SpeedLabel.Font = Enum.Font.SourceSans
+SpeedLabel.Text = "Jeda Stage (Detik):"
+SpeedLabel.TextColor3 = Color3.fromRGB(200, 220, 255)
+SpeedLabel.TextSize = 14
+SpeedLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+local SpeedInput = Instance.new("TextBox")
+SpeedInput.Parent = ContentFrame
+SpeedInput.BackgroundColor3 = Color3.fromRGB(25, 40, 70)
+SpeedInput.BorderColor3 = Color3.fromRGB(0, 120, 255)
+SpeedInput.Position = UDim2.new(0.58, 0, 0.38, 0)
+SpeedInput.Size = UDim2.new(0.37, 0, 0, 30)
+SpeedInput.Font = Enum.Font.SourceSansBold
+SpeedInput.Text = "1"
+SpeedInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+SpeedInput.TextSize = 16
+
+local ResetButton = Instance.new("TextButton")
+ResetButton.Parent = ContentFrame
+ResetButton.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
+ResetButton.BorderSizePixel = 0
+ResetButton.Position = UDim2.new(0.05, 0, 0.62, 0)
+ResetButton.Size = UDim2.new(0.9, 0, 0, 30)
+ResetButton.Font = Enum.Font.SourceSansBold
+ResetButton.Text = "RESPAWN MANUAL"
+ResetButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ResetButton.TextSize = 14
+
+local CreditLabel = Instance.new("TextLabel")
+CreditLabel.Parent = ContentFrame
+CreditLabel.BackgroundTransparency = 1
+CreditLabel.Position = UDim2.new(0, 0, 0.85, 0)
+CreditLabel.Size = UDim2.new(1, 0, 0, 20)
+CreditLabel.Font = Enum.Font.SourceSansItalic
+CreditLabel.Text = "Auto Mode + Custom Delay | By Bagas"
+CreditLabel.TextColor3 = Color3.fromRGB(100, 150, 200)
+CreditLabel.TextSize = 12
+
+local MinimizeButton = Instance.new("TextButton")
+MinimizeButton.Parent = TitleBar
+MinimizeButton.BackgroundColor3 = Color3.fromRGB(0, 70, 160)
+MinimizeButton.BorderSizePixel = 0
+MinimizeButton.Position = UDim2.new(0.85, 0, 0, 0)
+MinimizeButton.Size = UDim2.new(0.15, 0, 1, 0)
+MinimizeButton.Font = Enum.Font.SourceSansBold
+MinimizeButton.Text = "-"
+MinimizeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+MinimizeButton.TextSize = 20
+
+-----------------------------------------
+-- AKSI KONTROL GUI
+-----------------------------------------
+ToggleButton.MouseButton1Click:Connect(function()
+    autoToggle = not autoToggle
+    if autoToggle then
+        ToggleButton.Text = "AUTO OBBY: ON"
+        ToggleButton.BackgroundColor3 = Color3.fromRGB(50, 180, 50)
+    else
+        ToggleButton.Text = "AUTO OBBY: OFF"
+        ToggleButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+    end
+end)
+
+SpeedInput.FocusLost:Connect(function(enterPressed)
+    local val = tonumber(SpeedInput.Text)
+    if val and val >= 0 then
+        teleDelay = val
+    else
+        SpeedInput.Text = tostring(teleDelay)
+    end
+end)
+
+ResetButton.MouseButton1Click:Connect(function()
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum and hum.Health > 0 then
+        hum.Health = 0
+    end
+end)
+
+local isMinimized = false
+MinimizeButton.MouseButton1Click:Connect(function()
+    isMinimized = not isMinimized
+    if isMinimized then
+        ContentFrame.Visible = false
+        MainFrame.Size = UDim2.new(0, 280, 0, 35)
+        MinimizeButton.Text = "+"
+    else
+        ContentFrame.Visible = true
+        MainFrame.Size = UDim2.new(0, 280, 0, 230)
+        MinimizeButton.Text = "-"
+    end
+end)
+
+-----------------------------------------
+-- LOOPING AUTO TELEPORT
+-----------------------------------------
+task.spawn(function()
+    while true do
+        if autoToggle then
+            if tick() < pauseEndTime then
+                task.wait(0.1)
+                continue
+            end
+
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+
+            if hrp and hum and hum.Health > 0 then
+                local currentStage = getCurrentStageNumber()
+                local nextStageNum = 1
+
+                if currentStage then
+                    nextStageNum = currentStage + 1
+                    manualStageTracker = nextStageNum
+                else
+                    nextStageNum = manualStageTracker
+                    manualStageTracker = manualStageTracker + 1
+                end
+
+                local targetObj = findTargetStageObject(nextStageNum)
+                local targetCFrame = getCPPosition(targetObj)
+
+                if targetCFrame then
+                    -- Teleportasi 10 stud di atas stage agar karakter jatuh dari atas
+                    hrp.CFrame = targetCFrame * CFrame.new(0, 10, 0)
+                end
+
+                task.wait(teleDelay)
+            else
+                task.wait(0.1)
+            end
+        else
+            task.wait(0.2)
+        end
+    end
+end)
