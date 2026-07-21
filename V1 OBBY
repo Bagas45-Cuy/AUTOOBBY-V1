@@ -2,6 +2,7 @@ local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local CoreGui = game:GetService("CoreGui")
 local VirtualUser = game:GetService("VirtualUser")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 -- Hapus GUI lama jika ada
 if CoreGui:FindFirstChild("UniversalObbyHub") then
@@ -12,7 +13,12 @@ end
 -- CONFIGURATION & VARIABLES
 -----------------------------------------
 local autoToggle = false
+local autoRebirthToggle = false
 local teleDelay = 1.0 -- Default delay dalam detik
+
+-- Jarang vertikal di atas checkpoint (OFFSET)
+-- Ubah nilai ini jika masih terasa kurang pas (misal: 3, 4, atau 5)
+local heightOffset = 4
 
 local pauseEndTime = 0
 local isProcessingTeleport = false
@@ -89,6 +95,48 @@ local function getCPPosition(cpObject)
 end
 
 -----------------------------------------
+-- SISTEM AUTO REBIRTH UNIVERSAL
+-----------------------------------------
+local function attemptRebirth()
+    -- 1. Pemicu via RemoteEvent / RemoteFunction di ReplicatedStorage
+    local remoteNames = {"Rebirth", "RebirthEvent", "DoRebirth", "RebirthRequest", "PerformRebirth", "BuyRebirth", "RebirthBtn"}
+    for _, item in ipairs(ReplicatedStorage:GetDescendants()) do
+        for _, rName in ipairs(remoteNames) do
+            if item.Name:lower() == rName:lower() then
+                if item:IsA("RemoteEvent") then
+                    pcall(function() item:FireServer() end)
+                elseif item:IsA("RemoteFunction") then
+                    pcall(function() item:InvokeServer() end)
+                end
+            end
+        end
+    end
+
+    -- 2. Pemicu via Touch / Teleport ke Part Rebirth jika ada di Workspace
+    for _, item in ipairs(workspace:GetDescendants()) do
+        if item.Name:lower():find("rebirth") and not item:IsA("LocalScript") and not item:IsA("Script") then
+            if item:IsA("BasePart") then
+                local char = LocalPlayer.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    -- Gunakan firetouchinterest jika tersedia di executor kamu
+                    if firetouchinterest then
+                        pcall(function()
+                            firetouchinterest(hrp, item, 0)
+                            task.wait(0.1)
+                            firetouchinterest(hrp, item, 1)
+                        end)
+                    else
+                        -- Alternatif jika firetouchinterest tidak ada (kurang efektif)
+                        -- pcall(function() hrp.CFrame = item.CFrame end)
+                    end
+                end
+            end
+        end
+    end
+end
+
+-----------------------------------------
 -- ANTI-AFK SYSTEM
 -----------------------------------------
 LocalPlayer.Idled:Connect(function()
@@ -128,7 +176,7 @@ MainFrame.BackgroundColor3 = Color3.fromRGB(15, 25, 45)
 MainFrame.BorderColor3 = Color3.fromRGB(0, 120, 255)
 MainFrame.BorderSizePixel = 2
 MainFrame.Position = UDim2.new(0.35, 0, 0.35, 0)
-MainFrame.Size = UDim2.new(0, 280, 0, 230)
+MainFrame.Size = UDim2.new(0, 280, 0, 270)
 MainFrame.Active = true
 MainFrame.Draggable = true
 
@@ -161,17 +209,28 @@ local ToggleButton = Instance.new("TextButton")
 ToggleButton.Parent = ContentFrame
 ToggleButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
 ToggleButton.BorderSizePixel = 0
-ToggleButton.Position = UDim2.new(0.05, 0, 0.1, 0)
-ToggleButton.Size = UDim2.new(0.9, 0, 0, 40)
+ToggleButton.Position = UDim2.new(0.05, 0, 0.05, 0)
+ToggleButton.Size = UDim2.new(0.9, 0, 0, 35)
 ToggleButton.Font = Enum.Font.SourceSansBold
 ToggleButton.Text = "AUTO OBBY: OFF"
 ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-ToggleButton.TextSize = 16
+ToggleButton.TextSize = 15
+
+local RebirthButton = Instance.new("TextButton")
+RebirthButton.Parent = ContentFrame
+RebirthButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+RebirthButton.BorderSizePixel = 0
+RebirthButton.Position = UDim2.new(0.05, 0, 0.23, 0)
+RebirthButton.Size = UDim2.new(0.9, 0, 0, 35)
+RebirthButton.Font = Enum.Font.SourceSansBold
+RebirthButton.Text = "AUTO REBIRTH: OFF"
+RebirthButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+RebirthButton.TextSize = 15
 
 local SpeedLabel = Instance.new("TextLabel")
 SpeedLabel.Parent = ContentFrame
 SpeedLabel.BackgroundTransparency = 1
-SpeedLabel.Position = UDim2.new(0.05, 0, 0.38, 0)
+SpeedLabel.Position = UDim2.new(0.05, 0, 0.43, 0)
 SpeedLabel.Size = UDim2.new(0.5, 0, 0, 30)
 SpeedLabel.Font = Enum.Font.SourceSans
 SpeedLabel.Text = "Jeda Stage (Detik):"
@@ -183,7 +242,7 @@ local SpeedInput = Instance.new("TextBox")
 SpeedInput.Parent = ContentFrame
 SpeedInput.BackgroundColor3 = Color3.fromRGB(25, 40, 70)
 SpeedInput.BorderColor3 = Color3.fromRGB(0, 120, 255)
-SpeedInput.Position = UDim2.new(0.58, 0, 0.38, 0)
+SpeedInput.Position = UDim2.new(0.58, 0, 0.43, 0)
 SpeedInput.Size = UDim2.new(0.37, 0, 0, 30)
 SpeedInput.Font = Enum.Font.SourceSansBold
 SpeedInput.Text = "1"
@@ -194,7 +253,7 @@ local ResetButton = Instance.new("TextButton")
 ResetButton.Parent = ContentFrame
 ResetButton.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
 ResetButton.BorderSizePixel = 0
-ResetButton.Position = UDim2.new(0.05, 0, 0.62, 0)
+ResetButton.Position = UDim2.new(0.05, 0, 0.63, 0)
 ResetButton.Size = UDim2.new(0.9, 0, 0, 30)
 ResetButton.Font = Enum.Font.SourceSansBold
 ResetButton.Text = "RESPAWN MANUAL"
@@ -204,10 +263,10 @@ ResetButton.TextSize = 14
 local CreditLabel = Instance.new("TextLabel")
 CreditLabel.Parent = ContentFrame
 CreditLabel.BackgroundTransparency = 1
-CreditLabel.Position = UDim2.new(0, 0, 0.85, 0)
+CreditLabel.Position = UDim2.new(0, 0, 0.86, 0)
 CreditLabel.Size = UDim2.new(1, 0, 0, 20)
 CreditLabel.Font = Enum.Font.SourceSansItalic
-CreditLabel.Text = "Auto Mode + Custom Delay | By Bagas"
+CreditLabel.Text = "Auto Mode + Anti-AFK | By Bagas"
 CreditLabel.TextColor3 = Color3.fromRGB(100, 150, 200)
 CreditLabel.TextSize = 12
 
@@ -233,6 +292,17 @@ ToggleButton.MouseButton1Click:Connect(function()
     else
         ToggleButton.Text = "AUTO OBBY: OFF"
         ToggleButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+    end
+end)
+
+RebirthButton.MouseButton1Click:Connect(function()
+    autoRebirthToggle = not autoRebirthToggle
+    if autoRebirthToggle then
+        RebirthButton.Text = "AUTO REBIRTH: ON"
+        RebirthButton.BackgroundColor3 = Color3.fromRGB(50, 180, 50)
+    else
+        RebirthButton.Text = "AUTO REBIRTH: OFF"
+        RebirthButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
     end
 end)
 
@@ -262,16 +332,20 @@ MinimizeButton.MouseButton1Click:Connect(function()
         MinimizeButton.Text = "+"
     else
         ContentFrame.Visible = true
-        MainFrame.Size = UDim2.new(0, 280, 0, 230)
+        MainFrame.Size = UDim2.new(0, 280, 0, 270)
         MinimizeButton.Text = "-"
     end
 end)
 
 -----------------------------------------
--- LOOPING AUTO TELEPORT
+-- LOOPING AUTO TELEPORT & AUTO REBIRTH
 -----------------------------------------
 task.spawn(function()
     while true do
+        if autoRebirthToggle then
+            attemptRebirth()
+        end
+
         if autoToggle then
             if tick() < pauseEndTime then
                 task.wait(0.1)
@@ -298,8 +372,8 @@ task.spawn(function()
                 local targetCFrame = getCPPosition(targetObj)
 
                 if targetCFrame then
-                    -- Teleportasi 10 stud di atas stage agar karakter jatuh dari atas
-                    hrp.CFrame = targetCFrame * CFrame.new(0, 10, 0)
+                    -- Teleportasi sedikit di atas stage (menggunakan heightOffset)
+                    hrp.CFrame = targetCFrame * CFrame.new(0, heightOffset, 0)
                 end
 
                 task.wait(teleDelay)
